@@ -17,12 +17,15 @@ implementation
 
 function TAIRandom.FindMove(const board: TGameBoard; player: TPlayer): TPoint;
 var
-  TempPoints: packed array of TPoint = nil;
-  cell: TCell;
-  p, pt: TPoint;
+  TempPoints:    packed array of TPoint = nil;
+  cell:          TCell;
+  p, pt:         TPoint;
   accept, found: boolean;
-  l, newl: shortint;
+  l, newl:       shortint;
 begin
+  if board.GetWinner() <> PlayerNone then
+    exit(nil);
+
   accept := false;
   result := TPoint.Create();
   pt := TPoint.Create();
@@ -50,7 +53,6 @@ begin
             newl := l + 1;
             if newl = board.BoardArea then
               break;
-
             p := pt.Clone();
             SetLength(TempPoints, newl);
             TempPoints[l] := p;

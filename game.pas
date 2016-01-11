@@ -16,7 +16,7 @@ type
   TCellState = (FreeCell, Player1, Player2);
   TPlayer = (PlayerNone, PlayerOne, PlayerTwo);
   TCellNeighborType = (CNTNone, CNTTop, CNTTopRight, CNTBottomRight, CNTBottom, CNTBottomLeft, CNTTopLeft);
-  TCellNeighborTypeArray = array of TCellNeighborType;
+  TCellNeighborTypeArray = packed array of TCellNeighborType;
   TCellPosition = (CPNone, CPTopLeft, CPTop, CPTopRight, CPRight, CPBottomRight, CPBottom, CPBottomLeft, CPLeft, CPCenter);
 
   TCell = class;
@@ -25,7 +25,7 @@ type
       cell:  TCell;
       _type: TCellNeighborType;
   end;
-  TCellNeighborsArray = array of TCellNeighbor;
+  TCellNeighborsArray = packed array of TCellNeighbor;
 
   TCell = class
     strict private
@@ -49,15 +49,20 @@ type
       Fcell:  TCell;
       Forder: shortint;
   end;
-  TInputMove  = array[0..2] of shortint;
-  TInputMoves = array of TInputMove;
+  TInputMove  = packed array[0..2] of shortint;
+  TInputMoves = packed array of TInputMove;
 
   TGameBoard = class
     strict private
-      Fside:  shortint;
-      Farea:  shortint;
-      Fcells: array of array of TCell;
-      Fmoves: array of TMove;
+      Fside:   shortint;
+      Farea:   shortint;
+      Fcells:  packed array of array of TCell;
+      Fmoves:  packed array of TMove;
+      Fp1Top,
+      Fp1Btm,
+      Fp2Lft,
+      Fp2Rgt:  boolean;
+      Fwinner: TPlayer;
     private
       function  CalculateCellPosition(X, Y: shortint): TCellPosition;
       function  CalculateCellNeighborsCount(CellPos: TCellPosition; out Neighbors: TCellNeighborTypeArray): shortint;
@@ -70,8 +75,9 @@ type
       function  Initialize(SideLength: shortint): boolean;
       function  GetCell(X, Y: shortint): TCell;
       function  MakeMove(X, Y: shortint; player: TPlayer): boolean;
-      procedure ClearBoard();
       function  FillBoard(const moves: TInputMoves): boolean;
+      function  GetWinner(): TPlayer;
+      procedure ClearBoard();
       property  BoardSide: shortint read Fside;
       property  BoardArea: shortint read Farea;
   end;
@@ -86,7 +92,7 @@ type
 implementation
 
 var
-  CellNeighborsCount: packed array[CPTopLeft..CPCenter] of shortint = (
+  CellNeighborsCount: packed array [CPTopLeft..CPCenter] of shortint = (
                             2,  // CPTopLeft
                             4,  // CPTop
                             3,  // CPTopRight
@@ -96,7 +102,7 @@ var
                             3,  // CPBottomLeft
                             4,  // CPLeft
                             6); // CPCenter
-  CellNeighborsPositions: packed array[CPTopLeft..CPCenter, CNTTop..CNTTopLeft] of TCellNeighborType = (
+  CellNeighborsPositions: packed array [CPTopLeft..CPCenter, CNTTop..CNTTopLeft] of TCellNeighborType = (
                             // CPTopLeft
                             (CNTBottomRight, CNTBottom, CNTNone, CNTNone, CNTNone, CNTNone),
                             // CPTop
@@ -117,20 +123,26 @@ var
                             (CNTTop, CNTTopRight, CNTBottomRight, CNTBottom, CNTBottomLeft, CNTTopLeft));
 
 
-{$IFDEF _DBG}
-procedure TGameBoard.PrintMoves();
-var
-  move: TMove;
+(*
+ *  TGameBoard methods
+ *)
+function  TGameBoard.GetWinner(): TPlayer;
 begin
-  WriteLn('------------------------------');
-  for move in Self.Fmoves do
-    WriteLn(move.Forder, ') pos: (', move.Fcell.X, ', ', move.Fcell.Y, '); state: ', TPlayer(move.Fcell.State));
+  if Self.Fwinner = PlayerNone then
+    if (Self.Fp1Top and Self.Fp1Btm) then
+      // Check for PlayerOne
+      //begin end;
+      Self.Fwinner := PlayerOne;
+    if (Self.Fp2Lft and Self.Fp2Rgt) then
+      // Check for PlayerTwo
+      //begin end;
+      Self.Fwinner := PlayerTwo;
+  result := Self.Fwinner;
 end;
-{$ENDIF}
 
 function  TGameBoard.FillBoard(const moves: TInputMoves): boolean;
 var
-  move: TInputMove;
+  move:   TInputMove;
   player: TPlayer;
 begin
   Self.ClearBoard();
@@ -138,7 +150,7 @@ begin
     begin
       result := false;
       player := TPlayer(move[0]);
-      if (Length(move) = 3) and (player in [PlayerNone..PlayerTwo]) then
+      if (Length(move) = 3) and (player in [PlayerOne, PlayerTwo]) then
         result := Self.MakeMove(move[1], move[2], player);
       if not result then
         break;
@@ -158,6 +170,10 @@ begin
     end;
   move := nil;
   SetLength(Self.Fmoves, 0);
+  Self.Fp1Top := false;
+  Self.Fp1Btm := false;
+  Self.Fp2Lft := false;
+  Self.Fp2Rgt := false;
 end;
 
 function  TGameBoard.CheckBounds(X, Y: shortint): boolean;
@@ -167,13 +183,15 @@ end;
 
 function  TGameBoard.MakeMove(X, Y: shortint; player: TPlayer): boolean;
 var
-  cell: TCell;
-  move, PreviousMove: TMove;
-  MovesCount, NewMovesCount: shortint;
-  AllowMove: boolean;
+  cell:          TCell;
+  move,
+  PreviousMove:  TMove;
+  MovesCount,
+  NewMovesCount: shortint;
+  AllowMove:     boolean;
 begin
   result := false;
-  if Self.CheckBounds(X, Y) and (player <> PlayerNone) then
+  if (Self.GetWinner() = PlayerNone) and Self.CheckBounds(X, Y) and (player <> PlayerNone) then
     begin
       cell := Self.GetCell(X, Y);
       if cell.State = FreeCell then
@@ -196,8 +214,24 @@ begin
               move.Fcell := cell;
               move.Fcell.State := TCellState(player);
 
+              if player = PlayerOne then
+                begin
+                  if cell.Fpos in [CPTopLeft, CPTop, CPTopRight] then
+                    Self.Fp1Top := true
+                  else if cell.Fpos in [CPBottomLeft, CPBottom, CPBottomRight] then
+                    Self.Fp1Btm := true;
+                end
+              else if player = PlayerTwo then
+                begin
+                  if cell.Fpos in [CPTopLeft, CPLeft, CPBottomLeft] then
+                    Self.Fp2Lft := true
+                  else if cell.Fpos in [CPTopRight, CPRight, CPBottomRight] then
+                    Self.Fp2Rgt := true;
+                end;
+
               SetLength(Self.Fmoves, NewMovesCount);
               Self.Fmoves[MovesCount] := move;
+              Self.GetWinner();
               result := true;
             end;
         end;
@@ -275,17 +309,18 @@ end;
 
 function  TGameBoard.Initialize(SideLength: shortint): boolean;
 var
-  CellColumn: array of TCell;
-  cell: TCell;
-  x, y, i: shortint;
-  MaxIndex: shortint;
-  CellPos: TCellPosition;
-  Neighbors: TCellNeighborTypeArray;
+  CellColumn:     packed array of TCell;
+  cell:           TCell;
+  x, y, i:        shortint;
+  MaxIndex:       shortint;
+  CellPos:        TCellPosition;
+  Neighbors:      TCellNeighborTypeArray;
   NeighborsCount: shortint;
-  neigbor: TCellNeighbor;
+  neigbor:        TCellNeighbor;
 begin
   if not SideLength in [4..11] then
     exit(false);
+
   SetLength(Self.Fcells, SideLength, SideLength);
   Self.Fside := SideLength;
   Self.Farea := SideLength * SideLength;
@@ -316,6 +351,21 @@ begin
       end;
 end;
 
+{$IFDEF _DBG}
+procedure TGameBoard.PrintMoves();
+var
+  move: TMove;
+begin
+  WriteLn('------------------------------');
+  for move in Self.Fmoves do
+    WriteLn(move.Forder, ') pos: (', move.Fcell.X, ', ', move.Fcell.Y, '); player: ', TPlayer(move.Fcell.State));
+end;
+{$ENDIF}
+
+
+(*
+ *  TCell methods
+ *)
 function  TCell.SetCoordinates(X, Y: shortint): boolean;
 begin
   if not assigned(Self.Fpoint) then
@@ -351,6 +401,10 @@ begin
   exit(Self.SetCoordinates(X, Y));
 end;
 
+
+(*
+ *  TPoint methods
+ *)
 function TPoint.Clone(): TPoint;
 begin
   result := TPoint.Create;
