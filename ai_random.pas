@@ -36,7 +36,7 @@ begin
     l := Length(TempPoints);
     if l > 0 then
       for p in TempPoints do
-        if p.Equals(pt) then
+        if p.IsEqual(pt) then
           begin
             found := true;
             break;
@@ -74,4 +74,3 @@ begin
 end;
 
 end.
-
