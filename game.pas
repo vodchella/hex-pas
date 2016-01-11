@@ -272,9 +272,11 @@ var
 begin
   result := CellNeighborsCount[CellPos];
   if result > 0 then
-    SetLength(Neighbors, result);
-    for i := CNTTop to TCellNeighborType(result) do
-      Neighbors[shortint(i) - 1] := CellNeighborsPositions[CellPos, i];
+    begin
+      SetLength(Neighbors, result);
+      for i := CNTTop to TCellNeighborType(result) do
+        Neighbors[shortint(i) - 1] := CellNeighborsPositions[CellPos, i];
+    end;
 end;
 
 function  TGameBoard.GetCell(X, Y: shortint): TCell;
@@ -340,13 +342,16 @@ begin
         CellPos := Self.CalculateCellPosition(cell.X, cell.Y);
         cell.Fpos := CellPos;
         NeighborsCount := Self.CalculateCellNeighborsCount(CellPos, Neighbors);
-        SetLength(cell.Fneighbors, NeighborsCount);
-        for i := 0 to NeighborsCount - 1 do
+        if NeighborsCount > 0 then
           begin
-            neigbor := TCellNeighbor.Create();
-            neigbor._type := Neighbors[i];
-            neigbor.cell := Self.GetCellNeighbor(cell.X, cell.Y, neigbor._type);
-            cell.Fneighbors[i] := neigbor;
+            SetLength(cell.Fneighbors, NeighborsCount);
+            for i := 0 to NeighborsCount - 1 do
+              begin
+                neigbor := TCellNeighbor.Create();
+                neigbor._type := Neighbors[i];
+                neigbor.cell := Self.GetCellNeighbor(cell.X, cell.Y, neigbor._type);
+                cell.Fneighbors[i] := neigbor;
+              end;
           end;
       end;
 end;
