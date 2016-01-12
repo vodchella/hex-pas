@@ -340,7 +340,7 @@ var
   neigbor:        TCellNeighbor;
 begin
   result := false;
-  if SideLength in [4..11] then
+  if (not Self.Finit) and (SideLength in [4..11]) then
     begin
       SetLength(Self.Fcells, SideLength, SideLength);
       Self.Fside := SideLength;
