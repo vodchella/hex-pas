@@ -217,7 +217,9 @@ begin
               PreviousMove := Self.Fmoves[MovesCount - 1];
               if PreviousMove.Fcell.State = TCellState(player) then
                 AllowMove := false;
-            end;
+            end
+          else if player <> PlayerOne then
+            AllowMove := false;
 
           if AllowMove then
             begin
