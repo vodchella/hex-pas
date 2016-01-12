@@ -45,6 +45,7 @@ type
       property  State: TCellState read Fstate;
       property  AllyNeighborsCount: shortint read FAllyNeighborsCount;
   end;
+  TCellArray = packed array of TCell;
 
   TMove = class
     private
@@ -68,6 +69,7 @@ type
       Fp2Rgt:  shortint;
       Fwinner: TPlayer;
     private
+      function  RecursiveAnalyze(CurrentCell: TCell; TargetLine: shortint; var VisitedCells: TCellArray): boolean;
       function  CalculateCellPosition(X, Y: shortint): TCellPosition;
       function  CalculateCellNeighborsCount(CellPos: TCellPosition; out Neighbors: TCellNeighborTypeArray): shortint;
       function  GetCellNeighbor(CellX, CellY: shortint; NeighborType: TCellNeighborType): TCell;
@@ -132,15 +134,73 @@ var
 (*
  *  TGameBoard methods
  *)
+function  TGameBoard.RecursiveAnalyze(CurrentCell: TCell; TargetLine: shortint; var VisitedCells: TCellArray): boolean;
+var
+  neighbor: TCellNeighbor;
+  cell: TCell;
+  l, newl, CheckLine: shortint;
+
+  function CellInArray(): boolean; inline;
+  var
+    c: TCell;
+  begin
+    result := false;
+    for c in VisitedCells do
+      if c = cell then
+        exit(true);
+  end;
+
+  procedure PreExit(); inline;
+  begin
+    VisitedCells[l] := nil;
+    SetLength(VisitedCells, l);
+  end;
+
+begin
+  {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('  cell: (', CurrentCell.X, ', ', CurrentCell.Y, ')'); {$ENDIF}
+  if CurrentCell.AllyNeighborsCount <> 0 then
+    begin
+      l := Length(VisitedCells);
+      newl := l + 1;
+      SetLength(VisitedCells, newl);
+      VisitedCells[l] := CurrentCell;
+      for neighbor in CurrentCell.Fneighbors do
+        begin
+          cell := neighbor.cell;
+          if cell.Fstate = CurrentCell.Fstate then
+            if not CellInArray() then
+              begin
+                if cell.Fstate = Player1 then
+                  CheckLine := cell.Y
+                else if cell.Fstate = Player2 then
+                  CheckLine := cell.X;
+                if CheckLine = TargetLine then
+                  begin
+                    {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('  fin: (', cell.X, ', ', cell.Y, ')'); {$ENDIF}
+                    PreExit();
+                    exit(true);
+                  end
+                else
+                  result := Self.RecursiveAnalyze(cell, TargetLine, VisitedCells);
+              end;
+        end;
+
+      PreExit();
+    end;
+end;
+
 function  TGameBoard.GetWinner(): TPlayer;
 var
+  SearchResult: boolean;
   x, y: shortint;
   TargetX, TargetY: shortint;
   cell: TCell;
+  VisitedCells: TCellArray;
 begin
   result := PlayerNone;
   if Self.Finit then
     begin
+      SetLength(VisitedCells, 0);
       if Self.Fwinner = PlayerNone then
         if (Self.Fp1Top > 0) and (Self.Fp1Btm > 0) then
           // Check for PlayerOne
@@ -161,7 +221,14 @@ begin
                 if cell.Fstate = Player1 then
                   begin
                     // Starting cell found
-
+                    {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('--->> Start recursive search for ', cell.Fstate); {$ENDIF}
+                    SearchResult := Self.RecursiveAnalyze(cell, TargetY, VisitedCells);
+                    {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('---<< Stop  recursive search for ', cell.Fstate); {$ENDIF}
+                    if SearchResult then
+                      begin
+                        Self.Fwinner := PlayerOne;
+                        exit(PlayerOne);
+                      end;
                   end;
               end;
           end;
@@ -184,7 +251,14 @@ begin
                 if cell.Fstate = Player2 then
                   begin
                     // Starting cell found
-
+                    {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('--->> Start recursive search for ', cell.Fstate); {$ENDIF}
+                    SearchResult := Self.RecursiveAnalyze(cell, TargetX, VisitedCells);
+                    {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('---<< Stop  recursive search for ', cell.Fstate); {$ENDIF}
+                    if SearchResult then
+                      begin
+                        Self.Fwinner := PlayerTwo;
+                        exit(PlayerTwo);
+                      end;
                   end;
               end;
           end;
@@ -197,14 +271,12 @@ var
   neighbor: TCellNeighbor;
 begin
   if (cell.Fstate <> FreeCell) and (cell.FAllyNeighborsCount = 0) then
-    begin
-      for neighbor in cell.Fneighbors do
-        if neighbor.cell.Fstate = cell.Fstate then
-          begin
-            inc(cell.FAllyNeighborsCount);
-            inc(neighbor.cell.FAllyNeighborsCount);
-          end;
-    end;
+    for neighbor in cell.Fneighbors do
+      if neighbor.cell.Fstate = cell.Fstate then
+        begin
+          inc(cell.FAllyNeighborsCount);
+          inc(neighbor.cell.FAllyNeighborsCount);
+        end;
 end;
 
 function  TGameBoard.FillBoard(const moves: TInputMoves): boolean;
@@ -389,7 +461,7 @@ begin
         y += 1;
 
       if (x <> CellX) or (y <> CellY) then
-        // Self.GetCell can't be used at this moment,
+        // Self.GetCell() can't be used at this moment,
         // because of Self.Finit doesn't set yet
         result := Self.Fcells[X, Y];
     end;
