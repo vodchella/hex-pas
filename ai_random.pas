@@ -23,51 +23,52 @@ var
   accept, found: boolean;
   l, newl:       shortint;
 begin
-  if board.GetWinner() <> PlayerNone then
-    exit(nil);
+  result := nil;
+  if (board.Initialized) and (board.GetWinner() = PlayerNone) then
+    begin
+      accept := false;
+      pt := TPoint.Create();
+      p := TPoint.Create();
+      p.SetXY(-1, -1);
 
-  accept := false;
-  result := TPoint.Create();
-  pt := TPoint.Create();
-  p := TPoint.Create();
-  p.SetXY(-1, -1);
+      repeat
+        pt.SetXY(Random(board.BoardSide), Random(board.BoardSide));
 
-  repeat
-    pt.SetXY(Random(board.BoardSide), Random(board.BoardSide));
+        found := false;
+        l := Length(TempPoints);
+        if l > 0 then
+          for p in TempPoints do
+            if p.IsEqual(pt) then
+              begin
+                found := true;
+                break;
+              end;
 
-    found := false;
-    l := Length(TempPoints);
-    if l > 0 then
-      for p in TempPoints do
-        if p.IsEqual(pt) then
+        if not found then
           begin
-            found := true;
-            break;
+            cell := board.GetCell(pt.X, pt.Y);
+            if (cell <> nil) and (cell.State <> FreeCell) then
+              begin
+                newl := l + 1;
+                if newl = board.BoardArea then
+                  break;
+                p := pt.Clone();
+                SetLength(TempPoints, newl);
+                TempPoints[l] := p;
+                continue;
+              end;
           end;
 
-    if not found then
-      begin
-        cell := board.GetCell(pt.X, pt.Y);
-        if (cell <> nil) and (cell.State <> FreeCell) then
-          begin
-            newl := l + 1;
-            if newl = board.BoardArea then
-              break;
-            p := pt.Clone();
-            SetLength(TempPoints, newl);
-            TempPoints[l] := p;
-            continue;
-          end;
-      end;
+        if not found then
+          accept := true;
+      until accept = true;
 
-    if not found then
-      accept := true;
-  until accept = true;
-
-  if accept then
-    result.Assign(pt)
-  else
-    result := nil;
+      if accept then
+        begin
+          result := TPoint.Create();
+          result.Assign(pt)
+        end;
+    end;
 end;
 
 class constructor TAIRandom.Create();
