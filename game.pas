@@ -63,6 +63,7 @@ type
       Fcells:  packed array of array of TCell;
       Fmoves:  packed array of TMove;
       Finit:   boolean;
+      FpCnt:   array [PlayerOne..PlayerTwo] of shortint;
       Fp1Top,
       Fp1Btm,
       Fp2Lft,
@@ -74,6 +75,7 @@ type
       function  CalculateCellNeighborsCount(CellPos: TCellPosition; out Neighbors: TCellNeighborTypeArray): shortint;
       function  GetCellNeighbor(CellX, CellY: shortint; NeighborType: TCellNeighborType): TCell;
       function  CheckBounds(X, Y: shortint): boolean; inline;
+      function  UpdateWinner(): TPlayer;
       procedure UpdateCellAllyNeighborsCount(cell: TCell);
     public
       {$IFDEF _DBG}
@@ -83,11 +85,11 @@ type
       function  GetCell(X, Y: shortint): TCell;
       function  MakeMove(X, Y: shortint; player: TPlayer): boolean;
       function  FillBoard(const moves: TInputMoves): boolean;
-      function  GetWinner(): TPlayer;
       procedure ClearBoard();
       property  BoardSide: shortint read Fside;
       property  BoardArea: shortint read Farea;
       property  Initialized: boolean read Finit;
+      property  Winner: TPlayer read Fwinner;
   end;
 
   IArtificialIntelligence = interface
@@ -130,7 +132,6 @@ var
                             // CPCenter
                             (CNTTop, CNTTopRight, CNTBottomRight, CNTBottom, CNTBottomLeft, CNTTopLeft));
 
-
 (*
  *  TGameBoard methods
  *)
@@ -158,12 +159,14 @@ var
 
 begin
   {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('  cell: (', CurrentCell.X, ', ', CurrentCell.Y, ')'); {$ENDIF}
+  result := false;
   if CurrentCell.AllyNeighborsCount <> 0 then
     begin
       l := Length(VisitedCells);
       newl := l + 1;
       SetLength(VisitedCells, newl);
       VisitedCells[l] := CurrentCell;
+
       for neighbor in CurrentCell.Fneighbors do
         begin
           cell := neighbor.cell;
@@ -176,12 +179,16 @@ begin
                   CheckLine := cell.X;
                 if CheckLine = TargetLine then
                   begin
-                    {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('  fin: (', cell.X, ', ', cell.Y, ')'); {$ENDIF}
+                    {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('  fin:  (', cell.X, ', ', cell.Y, ')'); {$ENDIF}
                     PreExit();
                     exit(true);
                   end
                 else
-                  result := Self.RecursiveAnalyze(cell, TargetLine, VisitedCells);
+                  begin
+                    result := Self.RecursiveAnalyze(cell, TargetLine, VisitedCells);
+                    if result then
+                      break;
+                  end;
               end;
         end;
 
@@ -189,11 +196,11 @@ begin
     end;
 end;
 
-function  TGameBoard.GetWinner(): TPlayer;
+function  TGameBoard.UpdateWinner(): TPlayer;
 var
-  SearchResult: boolean;
-  x, y: shortint;
-  TargetX, TargetY: shortint;
+  SearchResult, DoAnalyze: boolean;
+  i: shortint;
+  pl: TPlayer;
   cell: TCell;
   VisitedCells: TCellArray;
 begin
@@ -202,62 +209,36 @@ begin
     begin
       SetLength(VisitedCells, 0);
       if Self.Fwinner = PlayerNone then
-        if (Self.Fp1Top > 0) and (Self.Fp1Btm > 0) then
-          // Check for PlayerOne
+        for pl := PlayerOne to PlayerTwo do
           begin
-            if Self.Fp1Top = 1 then
+            DoAnalyze := false;
+            if Self.FpCnt[pl] >= Self.Fside then
+              if pl = PlayerOne then
+                begin
+                  if (Self.Fp1Top > 0) and (Self.Fp1Btm > 0) then
+                    DoAnalyze := true;
+                end
+              else if pl = PlayerTwo then
+                if (Self.Fp2Lft > 0) and (Self.Fp2Rgt > 0) then
+                  DoAnalyze := true;
+            if DoAnalyze then
               begin
-                y := 0;
-                TargetY := Self.Fmaxind;
-              end
-            else if Self.Fp1Btm = 1 then
-              begin
-                y := Self.Fmaxind;
-                TargetY := 0;
-              end;
-            for x := 0 to Self.Fmaxind do
-              begin
-                cell := Self.Fcells[x, y];
-                if cell.Fstate = Player1 then
+                for i := 0 to Self.Fmaxind do
                   begin
-                    // Starting cell found
-                    {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('--->> Start recursive search for ', cell.Fstate); {$ENDIF}
-                    SearchResult := Self.RecursiveAnalyze(cell, TargetY, VisitedCells);
-                    {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('---<< Stop  recursive search for ', cell.Fstate); {$ENDIF}
-                    if SearchResult then
+                    if pl = PlayerOne then
+                      cell := Self.Fcells[i, 0]
+                    else if pl = PlayerTwo then
+                      cell := Self.Fcells[0, i];
+                    if cell.Fstate = TCellState(pl) then
                       begin
-                        Self.Fwinner := PlayerOne;
-                        exit(PlayerOne);
-                      end;
-                  end;
-              end;
-          end;
-        if (Self.Fp2Lft > 0) and (Self.Fp2Rgt > 0) then
-          // Check for PlayerTwo
-          begin
-            if Self.Fp2Lft = 1 then
-              begin
-                x := 0;
-                TargetX := Self.Fmaxind;
-              end
-            else if Self.Fp2Rgt = 1 then
-              begin
-                x := Self.Fmaxind;
-                TargetX := 0;
-              end;
-            for y := 0 to Self.Fmaxind do
-              begin
-                cell := Self.Fcells[x, y];
-                if cell.Fstate = Player2 then
-                  begin
-                    // Starting cell found
-                    {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('--->> Start recursive search for ', cell.Fstate); {$ENDIF}
-                    SearchResult := Self.RecursiveAnalyze(cell, TargetX, VisitedCells);
-                    {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('---<< Stop  recursive search for ', cell.Fstate); {$ENDIF}
-                    if SearchResult then
-                      begin
-                        Self.Fwinner := PlayerTwo;
-                        exit(PlayerTwo);
+                        {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('--->> Start recursive search for ', pl); {$ENDIF}
+                        SearchResult := Self.RecursiveAnalyze(cell, Self.Fmaxind, VisitedCells);
+                        {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('---<< Stop  recursive search for ', pl); {$ENDIF}
+                        if SearchResult then
+                          begin
+                            Self.Fwinner := pl;
+                            exit(pl);
+                          end;
                       end;
                   end;
               end;
@@ -320,6 +301,9 @@ begin
       Self.Fp1Btm := 0;
       Self.Fp2Lft := 0;
       Self.Fp2Rgt := 0;
+      Self.FpCnt[PlayerOne] := 0;
+      Self.FpCnt[PlayerTwo] := 0;
+      Self.Fwinner := PlayerNone;
     end;
 end;
 
@@ -338,7 +322,7 @@ var
   AllowMove:     boolean;
 begin
   result := false;
-  if Self.Finit and (Self.GetWinner() = PlayerNone) and Self.CheckBounds(X, Y) and (player <> PlayerNone) then
+  if Self.Finit and (Self.Fwinner = PlayerNone) and Self.CheckBounds(X, Y) and (player <> PlayerNone) then
     begin
       cell := Self.GetCell(X, Y);
       if cell.Fstate = FreeCell then
@@ -381,7 +365,8 @@ begin
 
               SetLength(Self.Fmoves, NewMovesCount);
               Self.Fmoves[MovesCount] := move;
-              Self.GetWinner();
+              inc(Self.FpCnt[player]);
+              Self.UpdateWinner();
               result := true;
             end;
         end;

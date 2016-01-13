@@ -24,7 +24,7 @@ var
   l, newl:       shortint;
 begin
   result := nil;
-  if (board.Initialized) and (board.GetWinner() = PlayerNone) then
+  if (board.Initialized) and (board.Winner = PlayerNone) then
     begin
       accept := false;
       pt := TPoint.Create();
