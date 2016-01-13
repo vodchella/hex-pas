@@ -56,6 +56,7 @@ type
       Fcell:  TCell;
       Forder: shortint;
   end;
+  TMoves = packed array of TMove;
   TInputMove  = packed array[0..2] of shortint;
   TInputMoves = packed array of TInputMove;
 
@@ -65,7 +66,7 @@ type
       Fmaxind: shortint;
       Farea:   shortint;
       Fcells:  packed array of array of TCell;
-      Fmoves:  packed array of TMove;
+      Fmoves:  TMoves;
       Finit:   boolean;
       FpCnt:   array [PlayerOne..PlayerTwo] of shortint;
       Fp1Top,
@@ -94,6 +95,7 @@ type
       property  BoardArea: shortint read Farea;
       property  Initialized: boolean read Finit;
       property  Winner: TPlayer read Fwinner;
+      property  Moves: TMoves read Fmoves;
   end;
 
   IArtificialIntelligence = interface
