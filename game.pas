@@ -70,7 +70,7 @@ type
       Fp2Rgt:  shortint;
       Fwinner: TPlayer;
     private
-      function  RecursiveAnalyze(CurrentCell: TCell; TargetLine: shortint; var VisitedCells: TCellArray): boolean;
+      function  RecursiveAnalyze(CurrentCell: TCell; var VisitedCells: TCellArray): boolean;
       function  CalculateCellPosition(X, Y: shortint): TCellPosition;
       function  CalculateCellNeighborsCount(CellPos: TCellPosition; out Neighbors: TCellNeighborTypeArray): shortint;
       function  GetCellNeighbor(CellX, CellY: shortint; NeighborType: TCellNeighborType): TCell;
@@ -135,7 +135,7 @@ var
 (*
  *  TGameBoard methods
  *)
-function  TGameBoard.RecursiveAnalyze(CurrentCell: TCell; TargetLine: shortint; var VisitedCells: TCellArray): boolean;
+function  TGameBoard.RecursiveAnalyze(CurrentCell: TCell; var VisitedCells: TCellArray): boolean;
 var
   neighbor: TCellNeighbor;
   cell: TCell;
@@ -177,7 +177,7 @@ begin
                   CheckLine := cell.Y
                 else if cell.Fstate = Player2 then
                   CheckLine := cell.X;
-                if CheckLine = TargetLine then
+                if CheckLine = Self.Fmaxind then
                   begin
                     {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('  fin:  (', cell.X, ', ', cell.Y, ')'); {$ENDIF}
                     PreExit();
@@ -185,7 +185,7 @@ begin
                   end
                 else
                   begin
-                    result := Self.RecursiveAnalyze(cell, TargetLine, VisitedCells);
+                    result := Self.RecursiveAnalyze(cell, VisitedCells);
                     if result then
                       break;
                   end;
@@ -232,7 +232,7 @@ begin
                     if cell.Fstate = TCellState(pl) then
                       begin
                         {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('--->> Start recursive search for ', pl); {$ENDIF}
-                        SearchResult := Self.RecursiveAnalyze(cell, Self.Fmaxind, VisitedCells);
+                        SearchResult := Self.RecursiveAnalyze(cell, VisitedCells);
                         {$IFDEF _DBG_RECURSIVE_SEARCH} WriteLn('---<< Stop  recursive search for ', pl); {$ENDIF}
                         if SearchResult then
                           begin
