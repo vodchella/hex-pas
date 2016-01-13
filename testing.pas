@@ -4,8 +4,8 @@ unit testing;
 interface
 
 uses
-  Classes, SysUtils, fpcunit, testutils, testregistry,
-  game;
+  Classes, SysUtils, fpcunit, testregistry,
+  game, ai_random;
 
 type
 
@@ -14,6 +14,7 @@ type
     procedure SearchForWinner1();
     procedure SearchForWinner2();
     procedure SearchForWinner3();
+    procedure RandomVsRandom();
   end;
 
 implementation
@@ -97,6 +98,46 @@ begin
   AssertEquals('Winner on board 3', TPlayer.AsString(PlayerTwo), TPlayer.AsString(board.Winner));
 end;
 
+procedure TTestHexGame.RandomVsRandom();
+var
+  board:  TGameBoard;
+  ai:     TAIRandom;
+  player: TPlayer;
+  pt:     TPoint;
+  mres:   boolean;
+  i:      shortint;
+begin
+  board := TGameBoard.Create();
+  board.Initialize(4);
+  ai := TAIRandom.Create();
+  player := PlayerOne;
+  i := 0;
+
+  repeat
+    inc(i);
+    if i > 16 then
+      break;
+    pt := ai.FindMove(board, player);
+    if pt <> nil then
+      begin
+        mres := board.MakeMove(pt.X, pt.Y, player);
+        if mres then
+          begin
+            if player = PlayerOne then
+              player := PlayerTwo
+            else
+              player := PlayerOne;
+          end
+        else
+          Fail('Move failed');
+      end
+    else
+      Fail('Point not found');
+  until board.Winner <> PlayerNone;
+
+  if board.Winner = PlayerNone then
+    Fail('Game failed');
+end;
 
 initialization
   RegisterTest(TTestHexGame);
