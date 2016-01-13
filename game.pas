@@ -19,6 +19,10 @@ type
   TCellNeighborTypeArray = packed array of TCellNeighborType;
   TCellPosition = (CPNone, CPTopLeft, CPTop, CPTopRight, CPRight, CPBottomRight, CPBottom, CPBottomLeft, CPLeft, CPCenter);
 
+  TPlayerHelper = type helper for TPlayer
+    function AsString(player: TPlayer): string;
+  end;
+
   TCell = class;
   TCellNeighbor = class
     public
@@ -585,5 +589,17 @@ begin
   Self.SetXY(pt.X, pt.Y);
 end;
 
-end.
 
+(*
+ *  TPlayerHelper methods
+ *)
+function TPlayerHelper.AsString(player: TPlayer): string;
+begin
+  case player of
+    PlayerNone: result := 'PlayerNone';
+    PlayerOne:  result := 'PlayerOne';
+    PlayerTwo:  result := 'PlayerTwo';
+  end;
+end;
+
+end.
