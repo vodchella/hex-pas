@@ -12,6 +12,7 @@ type
       procedure Assign(pt: TPoint);
       procedure SetXY(Px, Py: shortint);
   end;
+  TPoints = array of TPoint;
 
   TCellState = (FreeCell, Player1, Player2);
   TPlayer = (PlayerNone, PlayerOne, PlayerTwo);
@@ -34,6 +35,7 @@ type
   TCell = class
     strict private
       Fpoint: TPoint;
+      function  PlayerFromState(): TPlayer; inline;
     private
       Fstate: TCellState;
       Fpos:   TCellPosition;
@@ -47,6 +49,7 @@ type
       property  X: shortint read GetX;
       property  Y: shortint read GetY;
       property  State: TCellState read Fstate;
+      property  Player: TPlayer read PlayerFromState;
       property  AllyNeighborsCount: shortint read FAllyNeighborsCount;
   end;
   TCellArray = packed array of TCell;
@@ -55,6 +58,8 @@ type
     private
       Fcell:  TCell;
       Forder: shortint;
+    public
+      property Cell: TCell read Fcell;
   end;
   TMoves = packed array of TMove;
   TInputMove  = packed array[0..2] of shortint;
@@ -79,7 +84,6 @@ type
       function  CalculateCellPosition(X, Y: shortint): TCellPosition;
       function  CalculateCellNeighborsCount(CellPos: TCellPosition; out Neighbors: TCellNeighborTypeArray): shortint;
       function  GetCellNeighbor(CellX, CellY: shortint; NeighborType: TCellNeighborType): TCell;
-      function  CheckBounds(X, Y: shortint): boolean; inline;
       function  UpdateWinner(): TPlayer;
       procedure UpdateCellAllyNeighborsCount(cell: TCell);
     public
@@ -90,12 +94,14 @@ type
       function  GetCell(X, Y: shortint): TCell;
       function  MakeMove(X, Y: shortint; player: TPlayer): boolean;
       function  FillBoard(const moves: TInputMoves): boolean;
+      function  CheckBounds(X, Y: shortint): boolean;
       procedure ClearBoard();
       property  BoardSide: shortint read Fside;
       property  BoardArea: shortint read Farea;
       property  Initialized: boolean read Finit;
       property  Winner: TPlayer read Fwinner;
       property  Moves: TMoves read Fmoves;
+      property  MaxIndex: shortint read Fmaxind;
   end;
 
   IArtificialIntelligence = interface
@@ -313,7 +319,7 @@ begin
     end;
 end;
 
-function  TGameBoard.CheckBounds(X, Y: shortint): boolean; inline;
+function  TGameBoard.CheckBounds(X, Y: shortint): boolean;
 begin
   result := (X >= 0) and (Y >= 0) and (X <= Self.Fmaxind) and (Y <= Self.Fmaxind);
 end;
@@ -381,23 +387,23 @@ end;
 
 function  TGameBoard.CalculateCellPosition(X, Y: shortint): TCellPosition;
 var
-  MaxIndex: shortint;
+  MaxInd: shortint;
 begin
   result := CPNone;
   if Self.CheckBounds(X, Y) then
     begin
-      MaxIndex := Self.Fside - 1;
+      MaxInd := Self.Fside - 1;
       if X = 0 then
         if Y = 0 then
           result := CPTopLeft
-        else if Y = MaxIndex then
+        else if Y = MaxInd then
           result := CPBottomLeft
         else
           result := CPLeft
-      else if X = MaxIndex then
+      else if X = MaxInd then
         if Y = 0 then
           result := CPTopRight
-        else if Y = MaxIndex then
+        else if Y = MaxInd then
           result := CPBottomRight
         else
           result := CPRight
@@ -526,6 +532,11 @@ end;
 (*
  *  TCell methods
  *)
+function  TCell.PlayerFromState(): TPlayer;
+begin
+  result := TPlayer(Self.State);
+end;
+
 function  TCell.SetCoordinates(X, Y: shortint): boolean;
 begin
   result := false;
