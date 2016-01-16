@@ -51,6 +51,7 @@ type
       property  State: TCellState read Fstate;
       property  Player: TPlayer read PlayerFromState;
       property  AllyNeighborsCount: shortint read FAllyNeighborsCount;
+      property  Neighbors: TCellNeighborsArray read Fneighbors;
   end;
   TCellArray = packed array of TCell;
 

@@ -12,19 +12,20 @@ type
   end;
   TRelativePoint = TPointRecord;
 
-  TTwoBridgeConnectionDirection = (CDTopLeft, CDTop, CDTopRight, CDBottomRight, CDBottom, CDBottomLeft);
+  TTwoBridgeConnectionDirection = (CDUnknown, CDTopLeft, CDTop, CDTopRight, CDBottomRight, CDBottom, CDBottomLeft);
   TTwoBridgeConnectionState = (TBCSUnknown, TBCSInvalid, TBCSRealized, TBCSNotRealized, TBCSSafe, TBCSDangerous, TBCSFree);
   TTwoBridgeConnectionCarrier = array [0..1] of TRelativePoint;
   TTwoBridgeConnectionInformation = packed record
-    direction:       TTwoBridgeConnectionDirection;
-    state:           TTwoBridgeConnectionState;
-    point:           TPointRecord;
-    PriorityCell:    TCell;
-    carrier:         TTwoBridgeConnectionCarrier;
-    SideConnection:  boolean;
+    direction:            TTwoBridgeConnectionDirection;
+    state:                TTwoBridgeConnectionState;
+    point:                TPointRecord;
+    PriorityCell:         TCell;
+    carrier:              TTwoBridgeConnectionCarrier;
+    SideConnection,
+    EnemySideConnection:  boolean;
   end;
 
-  TSideConnectionDirection = TTwoBridgeConnectionDirection;
+  TSideConnectionDirection = (CDSUnknown, CDSTop, CDSRight, CDSBottom, CDSLeft);
   TSideConnectionCarrier = TTwoBridgeConnectionCarrier;
   TSideConnectionState = (SCSUnknown, SCSInvalid, SCSRealized, SCSSafe, SCSDangerous, SCSFree);
   TSideConnectionInformation = packed record
@@ -52,6 +53,7 @@ type
       class constructor Create();
   end;
 
+
 implementation
 
 type
@@ -63,7 +65,18 @@ type
     arr: PPointRecordArray;
   end;
 
-  TBoard = packed array of packed array of shortint;
+  TBoard = class
+    private
+      ai: TAIDefault;
+      player: TPlayer;
+      arr: packed array of packed array of shortint;
+      minval: shortint;
+      procedure InitArray(ArrSize: shortint);
+      procedure DecArrVal(Px, Py: shortint; val: shortint = 1; NoDecRepeatedly: boolean = false);
+      procedure UpdateArrBySideConn(Ax, Ay: shortint; var SideInfo: TSideConnectionInformation; NoDecRepeatedly: boolean = false);
+      procedure UpdateArrByTwoBridgeConn(Ax, Ay: shortint; var tb: TTwoBridgeConnectionInformation; NoDecRepeatedly: boolean);
+      function  AnalyzeSideConnectionsForPoint(Ax, Ay: shortint): TSideConnectionDirection;
+  end;
 
 var
   FirstMoves4:  packed array [1..2] of TPointRecord = (
@@ -89,6 +102,12 @@ var
                               (X: -1; Y: -1), (X: 1;  Y: -2), (X: 2;  Y: -1),
                               (X: 1;  Y: 1),  (X: -1; Y: 2),  (X: -2; Y: 1)
                             );
+  Template_SideConnectionsCarriers: packed array [CDSTop..CDSLeft] of TTwoBridgeConnectionCarrier = (
+                              ((X: 0;  Y: -1), (X: 1;  Y: -1)),
+                              ((X: 1;  Y: -1), (X: 1;  Y: 0)),
+                              ((X: 0;  Y: 1),  (X: -1; Y: 1)),
+                              ((X: -1; Y: 1),  (X: -1; Y: 0))
+                            );
   Template_ConnectionsCarriers: packed array [CDTopLeft..CDBottomLeft] of TTwoBridgeConnectionCarrier = (
                               ((X: -1; Y: 0),  (X: 0;  Y: -1)),
                               ((X: 0;  Y: -1), (X: 1;  Y: -1)),
@@ -98,8 +117,98 @@ var
                               ((X: -1; Y: 1),  (X: -1; Y: 0))
                             );
 
+  SideConnAdjacentTwoBridgeConns: packed array [CDSUnknown..CDSLeft] of array [0..1] of TTwoBridgeConnectionDirection = (
+                              (* CDSUnknown *) (CDUnknown, CDUnknown),
+                              (* CDSTop     *) (CDTopLeft, CDTopRight),
+                              (* CDSRight   *) (CDTop, CDBottomRight),
+                              (* CDSBottom  *) (CDBottomRight, CDBottomLeft),
+                              (* CDSLeft    *) (CDBottom, CDTopLeft)
+                            );
 
 
+(*
+ *  TBoard methods
+ *)
+procedure TBoard.DecArrVal(Px, Py: shortint; val: shortint = 1; NoDecRepeatedly: boolean = false);
+var
+  arrval: shortint;
+begin
+  arrval := arr[Px, Py];
+  if NoDecRepeatedly and ((arrval < 50) or (arrval = 99)) then
+    exit();
+  arrval -= val;
+  arr[Px, Py] := arrval;
+  if arrval < minval then
+    minval := arrval;
+end;
+
+procedure TBoard.UpdateArrBySideConn(Ax, Ay: shortint; var SideInfo: TSideConnectionInformation; NoDecRepeatedly: boolean = false);
+begin
+  if SideInfo.state = SCSSafe then
+    begin
+      Self.DecArrVal(SideInfo.carrier[0].X, SideInfo.carrier[0].Y, 1, NoDecRepeatedly);
+      Self.DecArrVal(SideInfo.carrier[1].X, SideInfo.carrier[1].Y, 1, NoDecRepeatedly);
+    end;
+  if SideInfo.state = SCSFree then
+    Self.DecArrVal(Ax, Ay, 2, NoDecRepeatedly);
+  if SideInfo.state = SCSDangerous then
+    Self.DecArrVal(SideInfo.PriorityCell.X, SideInfo.PriorityCell.Y, 5, NoDecRepeatedly);
+end;
+
+procedure TBoard.UpdateArrByTwoBridgeConn(Ax, Ay: shortint; var tb: TTwoBridgeConnectionInformation; NoDecRepeatedly: boolean);
+begin
+  if tb.state in [TBCSSafe, TBCSFree] then
+    begin
+      Self.DecArrVal(tb.carrier[0].X, tb.carrier[0].Y, 1, NoDecRepeatedly);
+      Self.DecArrVal(tb.carrier[1].X, tb.carrier[1].Y, 1, NoDecRepeatedly);
+    end;
+  if tb.state = TBCSFree then
+    Self.DecArrVal(Ax, Ay, 2, NoDecRepeatedly);
+  if tb.state = TBCSNotRealized then
+    begin
+      if Self.AnalyzeSideConnectionsForPoint(tb.PriorityCell.X, tb.PriorityCell.Y) <> CDSUnknown then
+        Self.DecArrVal(tb.PriorityCell.X, tb.PriorityCell.Y, 4{, NoDecRepeatedly})
+      else if tb.EnemySideConnection then
+        Self.DecArrVal(tb.PriorityCell.X, tb.PriorityCell.Y, 1, NoDecRepeatedly)
+      else if not tb.SideConnection then
+        Self.DecArrVal(tb.PriorityCell.X, tb.PriorityCell.Y, 3, NoDecRepeatedly)
+      else
+        Self.DecArrVal(tb.PriorityCell.X, tb.PriorityCell.Y, 4, NoDecRepeatedly);
+    end;
+  if tb.state = TBCSDangerous then
+    Self.DecArrVal(tb.PriorityCell.X, tb.PriorityCell.Y, 5, NoDecRepeatedly);
+end;
+
+function  TBoard.AnalyzeSideConnectionsForPoint(Ax, Ay: shortint): TSideConnectionDirection;
+var
+  dirs:  TSideConnectionDirection;
+  sinfo: TSideConnectionInformation;
+begin
+  result := CDSUnknown;
+  for dirs in [CDSTop..CDSLeft] do
+    begin
+      sinfo := Self.ai.GetSideConnectionInfo(Ax, Ay, dirs, player);
+      Self.UpdateArrBySideConn(Ax, Ay, sinfo, true);
+      if (sinfo.state = SCSSafe) or (sinfo.state = SCSFree) then
+        result := dirs;
+    end;
+end;
+
+procedure TBoard.InitArray(ArrSize: shortint);
+var
+  x, y: shortint;
+begin
+  SetLength(arr, ArrSize, ArrSize);
+  for x := 0 to ArrSize - 1 do
+    for y := 0 to ArrSize - 1 do
+      arr[x, y] := 50;
+  minval := 50;
+end;
+
+
+(*
+ *  TAIDefault methods
+ *)
 function  TAIDefault.GetSideConnectionInfo(X, Y: shortint; dir: TSideConnectionDirection; player: TPlayer): TSideConnectionInformation;
 var
   SrcCell:        TCell;
@@ -176,6 +285,7 @@ begin
   result.carrier := carrier;
   result.state := TBCSInvalid;
   result.SideConnection := false;
+  result.EnemySideConnection := false;
 
   if player = PlayerNone then
     begin
@@ -231,6 +341,10 @@ begin
       result.SideConnection := PointIsSideConnection(DstCell.X, DstCell.Y, player);
       if not result.SideConnection then
         result.SideConnection := PointIsSideConnection(SrcCell.X, SrcCell.Y, player);
+
+      result.EnemySideConnection := PointIsSideConnection(DstCell.X, DstCell.Y, OppositePlayer);
+      if not result.EnemySideConnection then
+        result.EnemySideConnection := PointIsSideConnection(SrcCell.X, SrcCell.Y, OppositePlayer);
     end;
 end;
 
@@ -278,8 +392,12 @@ begin
 end;
 
 function  TAIDefault.GetSideConnectionCarrier(X, Y: shortint; dir: TSideConnectionDirection): TSideConnectionCarrier;
+var
+  carrier: TSideConnectionCarrier;
 begin
-  result := Self.GetTwoBridgeConnectionCarrier(X, Y, dir);
+  carrier := Template_SideConnectionsCarriers[dir];
+  result[0] := Self.GetPointByRelative(X, Y, carrier[0]);
+  result[1] := Self.GetPointByRelative(X, Y, carrier[1]);
 end;
 
 function  TAIDefault.GetFirstMove(BoardSide: shortint): TPoint;
@@ -298,49 +416,73 @@ begin
   result.SetXY(p.X, p.Y);
 end;
 
-function TAIDefault.FindMove(const board: TGameBoard; player: TPlayer): TPoint;
+
+
+function  TAIDefault.FindMove(const board: TGameBoard; player: TPlayer): TPoint;
 var
-  arr:    TBoard;
-  move:   TMove;
-  dir:    TTwoBridgeConnectionDirection;
-  tbinfo: TTwoBridgeConnectionInformation;
-  sinfo:  TSideConnectionInformation;
+  brd:       TBoard;
+  move:      TMove;
+  dir:       TTwoBridgeConnectionDirection;
+  tbinfo:    TTwoBridgeConnectionInformation;
+  x, y:      shortint;
+  neighbor:  TCellNeighbor;
+  PointSideConnectionDir: TSideConnectionDirection;
+  ExcludeDirs: array [0..1] of TTwoBridgeConnectionDirection;
 begin
   result := nil;
   if board.BoardSide > 7 then
     exit();
   if (Length(board.Moves) = 0) and (player = PlayerOne) then
     result := Self.GetFirstMove(board.BoardSide)
+  else if (Length(board.Moves) = 1) and (player = PlayerTwo) then
+    result := Self.FindMove(board, PlayerOne)
   else
     begin
+      brd := TBoard.Create();
+      brd.ai := self;
+      brd.player := player;
+      brd.InitArray(board.BoardSide);
+
+      result := TPoint.Create();
       Self.Fboard := board;
-      SetLength(arr, board.BoardSide, board.BoardSide);
+
+      // Analyze two-bridge connections
       for move in board.Moves do
         begin
-        arr[move.Cell.X, move.Cell.Y] := 100;
+        brd.arr[move.Cell.X, move.Cell.Y] := 99;
         if move.Cell.Player = player then
           begin
-            WriteLn('--------- TwoBridge:');
+            PointSideConnectionDir := brd.AnalyzeSideConnectionsForPoint(move.Cell.X, move.Cell.Y); // <<-- Analyze side connections
             for dir in [CDTopLeft..CDBottomLeft] do
               begin
-              tbinfo := Self.GetTwoBridgeConnectionInfo(move.Cell.X, move.Cell.Y, dir, player);
-              Write(tbinfo.direction, '; ', tbinfo.state);
-              if (tbinfo.state = TBCSNotRealized) or (tbinfo.state = TBCSDangerous) then
-                Write('; priority: (', tbinfo.PriorityCell.X, ', ', tbinfo.PriorityCell.Y, ')');
-              if tbinfo.SideConnection then
-                Write('; side_conn');
-              WriteLn();
-              end;
-            WriteLn('--------- Side:');
-            for dir in [CDTopLeft..CDBottomLeft] do
-              begin
-              sinfo := Self.GetSideConnectionInfo(move.Cell.X, move.Cell.Y, dir, player);
-              Write(sinfo.direction, '; ', sinfo.state);
-              if sinfo.state = SCSDangerous then
-                Write('; priority: (', sinfo.PriorityCell.X, ', ', sinfo.PriorityCell.Y, ')');
-              WriteLn();
+                ExcludeDirs := SideConnAdjacentTwoBridgeConns[PointSideConnectionDir];
+                if (dir <> ExcludeDirs[0]) and (dir <> ExcludeDirs[1]) then
+                  begin
+                    tbinfo := Self.GetTwoBridgeConnectionInfo(move.Cell.X, move.Cell.Y, dir, player);
+                    brd.UpdateArrByTwoBridgeConn(move.Cell.X, move.Cell.Y, tbinfo, true);
+                    // Analyze side connections
+                    if (tbinfo.state <> TBCSUnknown) and (tbinfo.state <> TBCSInvalid) then
+                      begin
+                        brd.AnalyzeSideConnectionsForPoint(tbinfo.point.X, tbinfo.point.Y);
+                        for neighbor in move.Cell.Neighbors do
+                          if neighbor.cell.State = FreeCell then
+                            brd.AnalyzeSideConnectionsForPoint(neighbor.cell.X, neighbor.cell.Y);
+                      end;
+                  end;
               end;
           end;
+        end;
+
+      // Find best point
+      for y := 0 to board.MaxIndex do
+        begin
+        for x := 0 to board.MaxIndex do
+          begin
+          Write(brd.arr[x, y], ' ');
+          if brd.arr[x, y] = brd.minval then
+            result.SetXY(x, y);
+          end;
+        WriteLn();
         end;
     end;
 end;
