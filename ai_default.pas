@@ -40,7 +40,7 @@ type
       cells: TCellArray;
       function  CellInChain(cell: TCell): boolean;
       function  Clone(): TCellChain;
-      destructor Destroy();
+      destructor Destroy(); override;
   end;
   PCellChain = ^TCellChain;
   TPlayerChains = array of TCellChain;
@@ -509,8 +509,6 @@ var
   chain:   TCellChain;
   move:    TMove;
   p:       TPlayer;
-
-  cell: TCell;
 begin
   if not Assigned(Self.Fboard) then
     exit();
