@@ -35,10 +35,22 @@ type
     carrier:         TSideConnectionCarrier;
   end;
 
+  TCellChain = class
+    public
+      cells: TCellArray;
+      function  CellInChain(cell: TCell): boolean;
+      function  Clone(): TCellChain;
+      destructor Destroy();
+  end;
+  PCellChain = ^TCellChain;
+  TPlayerChains = array of TCellChain;
+  PPlayerChains = ^TPlayerChains;
+
   TAIDefault = class(TInterfacedObject, IArtificialIntelligence)
     strict private
       Fboard: TGameBoard;
     private
+      chains: array [PlayerOne..PlayerTwo] of TPlayerChains;
       function  GetOppositePlayer(player: TPlayer): TPlayer;
       function  GetFirstMove(BoardSide: shortint): TPoint;
       function  GetPointByRelative(X, Y: shortint; var pt: TRelativePoint): TPointRecord;
@@ -48,6 +60,10 @@ type
       function  PointIsSideConnection(X, Y: shortint; player: TPlayer): boolean;
       function  GetSideConnectionCarrier(X, Y: shortint; dir: TSideConnectionDirection): TSideConnectionCarrier;
       function  GetSideConnectionInfo(X, Y: shortint; dir: TSideConnectionDirection; player: TPlayer): TSideConnectionInformation;
+      function  CellBelongToAnyChain(pc: PPlayerChains; cell: TCell): boolean;
+      procedure AppendChain(pc: PPlayerChains; chain: TCellChain);
+      procedure FillChainRecursive(pc: PPlayerChains; chain: TCellChain; cell: TCell);
+      procedure FindAllChains();
     public
       function  FindMove(const board: TGameBoard; player: TPlayer): TPoint;
       class constructor Create();
@@ -65,7 +81,7 @@ type
     arr: PPointRecordArray;
   end;
 
-  TBoard = class
+  TPriorityBoard = class
     private
       ai: TAIDefault;
       player: TPlayer;
@@ -108,7 +124,7 @@ var
                               ((X: 0;  Y: 1),  (X: -1; Y: 1)),
                               ((X: -1; Y: 1),  (X: -1; Y: 0))
                             );
-  Template_ConnectionsCarriers: packed array [CDTopLeft..CDBottomLeft] of TTwoBridgeConnectionCarrier = (
+  Template_TwoBridgeConnectionsCarriers: packed array [CDTopLeft..CDBottomLeft] of TTwoBridgeConnectionCarrier = (
                               ((X: -1; Y: 0),  (X: 0;  Y: -1)),
                               ((X: 0;  Y: -1), (X: 1;  Y: -1)),
                               ((X: 1;  Y: -1), (X: 1;  Y: 0)),
@@ -127,9 +143,38 @@ var
 
 
 (*
+ *  TCellChain methods
+ *)
+function  TCellChain.CellInChain(cell: TCell): boolean;
+var
+  c: TCell;
+begin
+  result := false;
+  for c in Self.cells do
+    if c.IsEqual(cell) then
+      exit(true);
+end;
+
+function  TCellChain.Clone(): TCellChain;
+var
+  i: shortint;
+begin
+  result := TCellChain.Create();
+  SetLength(result.cells, Length(Self.cells));
+  for i := 0 to Length(Self.cells) - 1 do
+    result.cells[i] := Self.cells[i];
+end;
+
+destructor TCellChain.Destroy();
+begin
+  inherited;
+  SetLength(Self.cells, 0);
+end;
+
+(*
  *  TBoard methods
  *)
-procedure TBoard.DecArrVal(Px, Py: shortint; val: shortint = 1; NoDecRepeatedly: boolean = false);
+procedure TPriorityBoard.DecArrVal(Px, Py: shortint; val: shortint = 1; NoDecRepeatedly: boolean = false);
 var
   arrval: shortint;
 begin
@@ -142,7 +187,7 @@ begin
     minval := arrval;
 end;
 
-procedure TBoard.UpdateArrBySideConn(Ax, Ay: shortint; var SideInfo: TSideConnectionInformation; NoDecRepeatedly: boolean = false);
+procedure TPriorityBoard.UpdateArrBySideConn(Ax, Ay: shortint; var SideInfo: TSideConnectionInformation; NoDecRepeatedly: boolean = false);
 begin
   if SideInfo.state = SCSSafe then
     begin
@@ -155,7 +200,7 @@ begin
     Self.DecArrVal(SideInfo.PriorityCell.X, SideInfo.PriorityCell.Y, 5, NoDecRepeatedly);
 end;
 
-procedure TBoard.UpdateArrByTwoBridgeConn(Ax, Ay: shortint; var tb: TTwoBridgeConnectionInformation; NoDecRepeatedly: boolean);
+procedure TPriorityBoard.UpdateArrByTwoBridgeConn(Ax, Ay: shortint; var tb: TTwoBridgeConnectionInformation; NoDecRepeatedly: boolean);
 begin
   if tb.state in [TBCSSafe, TBCSFree] then
     begin
@@ -179,7 +224,7 @@ begin
     Self.DecArrVal(tb.PriorityCell.X, tb.PriorityCell.Y, 5, NoDecRepeatedly);
 end;
 
-function  TBoard.AnalyzeSideConnectionsForPoint(Ax, Ay: shortint): TSideConnectionDirection;
+function  TPriorityBoard.AnalyzeSideConnectionsForPoint(Ax, Ay: shortint): TSideConnectionDirection;
 var
   dirs:  TSideConnectionDirection;
   sinfo: TSideConnectionInformation;
@@ -194,7 +239,7 @@ begin
     end;
 end;
 
-procedure TBoard.InitArray(ArrSize: shortint);
+procedure TPriorityBoard.InitArray(ArrSize: shortint);
 var
   x, y: shortint;
 begin
@@ -386,7 +431,7 @@ function  TAIDefault.GetTwoBridgeConnectionCarrier(X, Y: shortint; dir: TTwoBrid
 var
   carrier: TTwoBridgeConnectionCarrier;
 begin
-  carrier := Template_ConnectionsCarriers[dir];
+  carrier := Template_TwoBridgeConnectionsCarriers[dir];
   result[0] := Self.GetPointByRelative(X, Y, carrier[0]);
   result[1] := Self.GetPointByRelative(X, Y, carrier[1]);
 end;
@@ -416,11 +461,107 @@ begin
   result.SetXY(p.X, p.Y);
 end;
 
+procedure TAIDefault.FillChainRecursive(pc: PPlayerChains; chain: TCellChain; cell: TCell);
+var
+  l, newl: shortint;
+  neighbor: TCellNeighbor;
+  NewChain, ReferenceChain: TCellChain;
+  IntersectingChainsProcessed: shortint;
+begin
+  l := Length(chain.cells);
+  newl := l + 1;
+  SetLength(chain.cells, newl);
+  chain.cells[l] := cell;
+  if cell.AllyNeighborsCount > 2 then
+    begin
+      IntersectingChainsProcessed := 0;
+      for neighbor in cell.Neighbors do
+        if (neighbor.cell.Player = cell.Player) and (not Self.CellBelongToAnyChain(pc, neighbor.cell) {chain.CellInChain(neighbor.cell)}) then
+          begin
+            if IntersectingChainsProcessed = 0 then
+              begin
+              NewChain := chain;
+              ReferenceChain := chain.Clone();
+              WriteLn('Chain resume at point (', cell.X, ', ', cell.Y, ')');
+              end
+            else
+              begin
+              NewChain := ReferenceChain.Clone();
+              Self.AppendChain(pc, NewChain);
+              WriteLn('Chain cloning at point (', cell.X, ', ', cell.Y, ')');
+              end;
+            WriteLn('Go to point (', neighbor.cell.X, ', ', neighbor.cell.Y, ')');
+            Inc(IntersectingChainsProcessed);
+            Self.FillChainRecursive(pc, NewChain, neighbor.cell);
+          end;
+      if Assigned(ReferenceChain) then
+        ReferenceChain.Destroy();
+    end
+  else
+    for neighbor in cell.Neighbors do
+      if (neighbor.cell.Player = cell.Player) and (not Self.CellBelongToAnyChain(pc, neighbor.cell) {chain.CellInChain(neighbor.cell)}) then
+        Self.FillChainRecursive(pc, chain, neighbor.cell);
+end;
 
+procedure TAIDefault.FindAllChains();
+var
+  pchains: PPlayerChains;
+  chain:   TCellChain;
+  move:    TMove;
+  p:       TPlayer;
+
+  cell: TCell;
+begin
+  if not Assigned(Self.Fboard) then
+    exit();
+  for p in [PlayerOne..PlayerTwo] do
+    begin
+      pchains := @Self.chains[p];
+      for move in Self.Fboard.Moves do
+        begin
+          if (move.cell.Player = p) and (not Self.CellBelongToAnyChain(pchains, move.cell)) then
+            begin
+              //WriteLn('Start chain at (', move.cell.X, ', ', move.cell.Y, ')');
+              chain := TCellChain.Create();
+              Self.AppendChain(pchains, chain);
+              Self.FillChainRecursive(pchains, chain, move.cell);
+
+              {WriteLn('      ', p, ': ', Length(pchains^));
+              for chain in pchains^ do
+                begin
+                  Write('      > ');
+                  for cell in chain.cells do
+                    Write('(', cell.X,', ', cell.Y,') ');
+                  WriteLn();
+                end;}
+            end;
+        end;
+    end;
+end;
+
+procedure TAIDefault.AppendChain(pc: PPlayerChains; chain: TCellChain);
+var
+  l, newl: shortint;
+begin
+  l := Length(pc^);
+  newl := l + 1;
+  SetLength(pc^, newl);
+  pc^[l] := chain;
+end;
+
+function  TAIDefault.CellBelongToAnyChain(pc: PPlayerChains; cell: TCell): boolean;
+var
+  chain: TCellChain;
+begin
+  result := false;
+  for chain in pc^ do
+    if chain.CellInChain(cell) then
+      exit(true);
+end;
 
 function  TAIDefault.FindMove(const board: TGameBoard; player: TPlayer): TPoint;
 var
-  brd:       TBoard;
+  brd:       TPriorityBoard;
   move:      TMove;
   dir:       TTwoBridgeConnectionDirection;
   tbinfo:    TTwoBridgeConnectionInformation;
@@ -428,6 +569,11 @@ var
   neighbor:  TCellNeighbor;
   PointSideConnectionDir: TSideConnectionDirection;
   ExcludeDirs: array [0..1] of TTwoBridgeConnectionDirection;
+
+  pchains: TPlayerChains;
+  chain: TCellChain;
+  cell:  TCell;
+  pl: TPlayer;
 begin
   result := nil;
   if board.BoardSide > 7 then
@@ -438,13 +584,29 @@ begin
     result := Self.FindMove(board, PlayerOne)
   else
     begin
-      brd := TBoard.Create();
+      result := TPoint.Create();
+      Self.Fboard := board;
+
+      WriteLn('----- Chains');
+      Self.FindAllChains();
+      for pl in [PlayerOne..PlayerTwo] do
+        begin
+          pchains := Self.chains[pl];
+          WriteLn('      ', pl, ': ', Length(pchains));
+          for chain in pchains do
+            begin
+              Write('      > ');
+              for cell in chain.cells do
+                Write('(', cell.X,', ', cell.Y,') ');
+              WriteLn();
+            end;
+          WriteLn('-------------');
+        end;
+
+      brd := TPriorityBoard.Create();
       brd.ai := self;
       brd.player := player;
       brd.InitArray(board.BoardSide);
-
-      result := TPoint.Create();
-      Self.Fboard := board;
 
       // Analyze two-bridge connections
       for move in board.Moves do
