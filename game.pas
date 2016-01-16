@@ -46,6 +46,7 @@ type
       function  SetCoordinates(X, Y: shortint): boolean;
     public
       function  Initialize(X, Y: shortint; state: TCellState): boolean;
+      function  IsEqual(cell: TCell): boolean;
       property  X: shortint read GetX;
       property  Y: shortint read GetY;
       property  State: TCellState read Fstate;
@@ -577,6 +578,10 @@ begin
       end;
 end;
 
+function  TCell.IsEqual(cell: TCell): boolean;
+begin
+  result := Self.Fpoint.IsEqual(cell.Fpoint);
+end;
 
 (*
  *  TPoint methods
