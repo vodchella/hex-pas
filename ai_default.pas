@@ -61,7 +61,8 @@ type
       function  GetSideConnectionCarrier(X, Y: shortint; dir: TSideConnectionDirection): TSideConnectionCarrier;
       function  GetSideConnectionInfo(X, Y: shortint; dir: TSideConnectionDirection; player: TPlayer): TSideConnectionInformation;
       function  CellBelongToAnyChain(pc: PPlayerChains; cell: TCell): boolean;
-      procedure AppendChain(pc: PPlayerChains; chain: TCellChain);
+      function  AppendChain(pc: PPlayerChains; chain: TCellChain): shortint;
+      procedure AppendCell(chain: TCellChain; cell: TCell);
       procedure FillChainRecursive(pc: PPlayerChains; chain: TCellChain; cell: TCell);
       procedure FindAllChains();
     public
@@ -463,43 +464,56 @@ end;
 
 procedure TAIDefault.FillChainRecursive(pc: PPlayerChains; chain: TCellChain; cell: TCell);
 var
-  l, newl: shortint;
   neighbor: TCellNeighbor;
   NewChain, ReferenceChain: TCellChain;
   IntersectingChainsProcessed: shortint;
+  cells:  array of TCell;
+  ChainIndices: array of shortint;
+  l, newl: shortint;
 begin
-  l := Length(chain.cells);
-  newl := l + 1;
-  SetLength(chain.cells, newl);
-  chain.cells[l] := cell;
-  if cell.AllyNeighborsCount > 2 then
+  if not chain.CellInChain(cell) then
+    Self.AppendCell(chain, cell);
+
+  if (cell.AllyNeighborsCount > 2) or ((cell.AllyNeighborsCount = 2) and (Length(chain.cells) = 1)) then
     begin
+      SetLength(cells, 0);
+      SetLength(ChainIndices, 0);
       IntersectingChainsProcessed := 0;
       for neighbor in cell.Neighbors do
-        if (neighbor.cell.Player = cell.Player) and (not Self.CellBelongToAnyChain(pc, neighbor.cell) {chain.CellInChain(neighbor.cell)}) then
+        if (neighbor.cell.Player = cell.Player) and (not Self.CellBelongToAnyChain(pc, neighbor.cell)) then
           begin
+            l := Length(cells);
+            newl := l + 1;
+            SetLength(cells, newl);
+            SetLength(ChainIndices, newl);
+            cells[l] := neighbor.cell;
             if IntersectingChainsProcessed = 0 then
               begin
               NewChain := chain;
               ReferenceChain := chain.Clone();
-              WriteLn('Chain resume at point (', cell.X, ', ', cell.Y, ')');
+              ChainIndices[l] := -1;
               end
             else
               begin
               NewChain := ReferenceChain.Clone();
-              Self.AppendChain(pc, NewChain);
-              WriteLn('Chain cloning at point (', cell.X, ', ', cell.Y, ')');
+              ChainIndices[l] := Self.AppendChain(pc, NewChain);
               end;
-            WriteLn('Go to point (', neighbor.cell.X, ', ', neighbor.cell.Y, ')');
             Inc(IntersectingChainsProcessed);
-            Self.FillChainRecursive(pc, NewChain, neighbor.cell);
+            Self.AppendCell(NewChain, neighbor.cell);
           end;
-      if Assigned(ReferenceChain) then
-        ReferenceChain.Destroy();
+      if IntersectingChainsProcessed > 0 then
+        for l := 0 to Length(cells) - 1 do
+          begin
+            if ChainIndices[l] = -1 then
+              NewChain := chain
+            else
+              NewChain := pc^[ChainIndices[l]];
+            Self.FillChainRecursive(pc, NewChain, cells[l]);
+          end;
     end
   else
     for neighbor in cell.Neighbors do
-      if (neighbor.cell.Player = cell.Player) and (not Self.CellBelongToAnyChain(pc, neighbor.cell) {chain.CellInChain(neighbor.cell)}) then
+      if (neighbor.cell.Player = cell.Player) and (not Self.CellBelongToAnyChain(pc, neighbor.cell)) then
         Self.FillChainRecursive(pc, chain, neighbor.cell);
 end;
 
@@ -515,29 +529,20 @@ begin
   for p in [PlayerOne..PlayerTwo] do
     begin
       pchains := @Self.chains[p];
+      SetLength(pchains^, 0);
       for move in Self.Fboard.Moves do
         begin
           if (move.cell.Player = p) and (not Self.CellBelongToAnyChain(pchains, move.cell)) then
             begin
-              //WriteLn('Start chain at (', move.cell.X, ', ', move.cell.Y, ')');
               chain := TCellChain.Create();
               Self.AppendChain(pchains, chain);
               Self.FillChainRecursive(pchains, chain, move.cell);
-
-              {WriteLn('      ', p, ': ', Length(pchains^));
-              for chain in pchains^ do
-                begin
-                  Write('      > ');
-                  for cell in chain.cells do
-                    Write('(', cell.X,', ', cell.Y,') ');
-                  WriteLn();
-                end;}
             end;
         end;
     end;
 end;
 
-procedure TAIDefault.AppendChain(pc: PPlayerChains; chain: TCellChain);
+function  TAIDefault.AppendChain(pc: PPlayerChains; chain: TCellChain): shortint;
 var
   l, newl: shortint;
 begin
@@ -545,6 +550,17 @@ begin
   newl := l + 1;
   SetLength(pc^, newl);
   pc^[l] := chain;
+  result := l;
+end;
+
+procedure TAIDefault.AppendCell(chain: TCellChain; cell: TCell);
+var
+  l, newl: shortint;
+begin
+  l := Length(chain.cells);
+  newl := l + 1;
+  SetLength(chain.cells, newl);
+  chain.cells[l] := cell;
 end;
 
 function  TAIDefault.CellBelongToAnyChain(pc: PPlayerChains; cell: TCell): boolean;
@@ -585,8 +601,9 @@ begin
       result := TPoint.Create();
       Self.Fboard := board;
 
-      WriteLn('----- Chains');
       Self.FindAllChains();
+      {$IFDEF _DBG}
+      WriteLn('----- Chains');
       for pl in [PlayerOne..PlayerTwo] do
         begin
           pchains := Self.chains[pl];
@@ -600,6 +617,7 @@ begin
             end;
           WriteLn('-------------');
         end;
+      {$ENDIF}
 
       brd := TPriorityBoard.Create();
       brd.ai := self;
