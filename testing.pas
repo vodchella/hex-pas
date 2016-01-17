@@ -15,13 +15,14 @@ type
     procedure SearchForWinner2();
     procedure SearchForWinner3();
     procedure RandomVsRandom();
-    procedure AnalyzeCellChains();
+    procedure AnalyzeCellChains1();
+    procedure AnalyzeCellChains2();
   end;
 
 implementation
 
 var
-  ArrForAnalyzeCellChains: array [0..17] of array [0..1] of shortint = (
+  ArrForAnalyzeCellChains1: array [0..17] of array [0..1] of shortint = (
                                (* PlayerOne *)
                                (1, 4), (1, 3), (1, 2),
                                (1, 4), (2, 3), (3, 2), (3, 1),
@@ -30,6 +31,16 @@ var
                                (2, 2), (2, 1), (1, 1),
                                (2, 4), (3, 4),
                                (0, 4), (0, 3)
+                             );
+  ArrForAnalyzeCellChains2: array [0..19] of array [0..1] of shortint = (
+                               (* PlayerOne *)
+                               (1, 5), (1, 4), (1, 3), (1, 2), (2, 1), (3, 1), (3, 2),
+                               (1, 5), (1, 4), (2, 3),
+                               (* PlayerTwo *)
+                               (0, 5), (0, 4), (0, 3),
+                               (2, 5), (2, 4), (3, 3),
+                               (2, 5), (3, 4),
+                               (2, 5), (3, 5)
                              );
 
 procedure TTestHexGame.SearchForWinner1();
@@ -152,7 +163,7 @@ begin
     Fail('Game failed');
 end;
 
-procedure TTestHexGame.AnalyzeCellChains();
+procedure TTestHexGame.AnalyzeCellChains1();
 var
   board:   TGameBoard;
   ai:      TAIDefault;
@@ -194,12 +205,65 @@ begin
           for chain in pchains do
             for cell in chain.cells do
               begin
-                if (cell.X <> ArrForAnalyzeCellChains[i][0]) or (cell.Y <> ArrForAnalyzeCellChains[i][1]) then
+                if (cell.X <> ArrForAnalyzeCellChains1[i][0]) or (cell.Y <> ArrForAnalyzeCellChains1[i][1]) then
                   Fail('Something wrong with cell chains building');
                 inc(i);
               end;
         end;
       if i <> 18 then
+        Fail('Wrong number of cells in chain ');
+    end
+  else
+    Fail('Can''t create board');
+end;
+
+procedure TTestHexGame.AnalyzeCellChains2();
+var
+  board:   TGameBoard;
+  ai:      TAIDefault;
+  pl:      TPlayer;
+  pchains: TPlayerChains;
+  chain:   TCellChain;
+  cell:    TCell;
+  i:       shortint;
+begin
+  board := TGameBoard.Create();
+  if board.Initialize(6) then
+    begin
+      ai := TAIDefault.Create();
+
+      board.MakeMove(1, 5, PlayerOne);
+      board.MakeMove(0, 5, PlayerTwo);
+      board.MakeMove(1, 4, PlayerOne);
+      board.MakeMove(0, 4, PlayerTwo);
+      board.MakeMove(2, 3, PlayerOne);
+      board.MakeMove(0, 3, PlayerTwo);
+      board.MakeMove(3, 2, PlayerOne);
+      board.MakeMove(2, 5, PlayerTwo);
+      board.MakeMove(3, 1, PlayerOne);
+      board.MakeMove(2, 4, PlayerTwo);
+      board.MakeMove(2, 1, PlayerOne);
+      board.MakeMove(3, 3, PlayerTwo);
+      board.MakeMove(1, 2, PlayerOne);
+      board.MakeMove(3, 5, PlayerTwo);
+      board.MakeMove(1, 3, PlayerOne);
+      board.MakeMove(3, 4, PlayerTwo);
+
+      ai.FindMove(board, PlayerOne);  // <<-- Force chains updating
+
+      i := 0;
+      for pl in [PlayerOne..PlayerTwo] do
+        begin
+          pchains := ai.AllCellChains[pl];
+          for chain in pchains do
+            for cell in chain.cells do
+              begin
+                if (cell.X <> ArrForAnalyzeCellChains2[i][0]) or (cell.Y <> ArrForAnalyzeCellChains2[i][1]) then
+                  Fail('Something wrong with cell chains building');
+                inc(i);
+              end;
+        end;
+      if i <> 20 then
         Fail('Wrong number of cells in chain ');
     end
   else
