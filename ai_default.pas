@@ -42,15 +42,15 @@ type
       function  Clone(): TCellChain;
       destructor Destroy(); override;
   end;
-  PCellChain = ^TCellChain;
   TPlayerChains = array of TCellChain;
   PPlayerChains = ^TPlayerChains;
+  TAllCellChains = array [PlayerOne..PlayerTwo] of TPlayerChains;
 
   TAIDefault = class(TInterfacedObject, IArtificialIntelligence)
     strict private
       Fboard: TGameBoard;
     private
-      chains: array [PlayerOne..PlayerTwo] of TPlayerChains;
+      Fchains:  TAllCellChains;
       function  GetOppositePlayer(player: TPlayer): TPlayer;
       function  GetFirstMove(BoardSide: shortint): TPoint;
       function  GetPointByRelative(X, Y: shortint; var pt: TRelativePoint): TPointRecord;
@@ -67,6 +67,7 @@ type
       procedure FindAllChains();
     public
       function  FindMove(const board: TGameBoard; player: TPlayer): TPoint;
+      property  AllCellChains: TAllCellChains read Fchains;
       class constructor Create();
   end;
 
@@ -528,7 +529,7 @@ begin
     exit();
   for p in [PlayerOne..PlayerTwo] do
     begin
-      pchains := @Self.chains[p];
+      pchains := @Self.Fchains[p];
       SetLength(pchains^, 0);
       for move in Self.Fboard.Moves do
         begin
@@ -584,10 +585,12 @@ var
   PointSideConnectionDir: TSideConnectionDirection;
   ExcludeDirs: array [0..1] of TTwoBridgeConnectionDirection;
 
+  {$IFDEF _DBG_CELL_CHAINS_SEARCH}
   pchains: TPlayerChains;
   chain: TCellChain;
   cell:  TCell;
   pl: TPlayer;
+  {$ENDIF}
 begin
   result := nil;
   if board.BoardSide > 7 then
@@ -602,11 +605,11 @@ begin
       Self.Fboard := board;
 
       Self.FindAllChains();
-      {$IFDEF _DBG}
+      {$IFDEF _DBG_CELL_CHAINS_SEARCH}
       WriteLn('----- Chains');
       for pl in [PlayerOne..PlayerTwo] do
         begin
-          pchains := Self.chains[pl];
+          pchains := Self.Fchains[pl];
           WriteLn('      ', pl, ': ', Length(pchains));
           for chain in pchains do
             begin
