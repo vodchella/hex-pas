@@ -46,6 +46,9 @@ type
   PPlayerChains = ^TPlayerChains;
   TAllCellChains = array [PlayerOne..PlayerTwo] of TPlayerChains;
 
+  TBoardSide = (BoardSideOne, BoardSideTwo);
+  TTemporaryBoard = packed array of packed array of shortint;
+
   TAIDefault = class(TInterfacedObject, IArtificialIntelligence)
     strict private
       Fboard: TGameBoard;
@@ -65,6 +68,7 @@ type
       procedure AppendCell(chain: TCellChain; cell: TCell);
       procedure FillChainRecursive(pc: PPlayerChains; chain: TCellChain; cell: TCell);
       procedure FindAllChains();
+      procedure GenerateWayMapForCell(player: TPlayer; cell: TCell; var brd: TTemporaryBoard);
     public
       function  FindMove(const board: TGameBoard; player: TPlayer): TPoint;
       property  AllCellChains: TAllCellChains read Fchains;
@@ -87,7 +91,7 @@ type
     private
       ai: TAIDefault;
       player: TPlayer;
-      arr: packed array of packed array of shortint;
+      arr: TTemporaryBoard;
       minval: shortint;
       procedure InitArray(ArrSize: shortint);
       procedure DecArrVal(Px, Py: shortint; val: shortint = 1; NoDecRepeatedly: boolean = false);
@@ -574,9 +578,65 @@ begin
       exit(true);
 end;
 
+procedure TAIDefault.GenerateWayMapForCell(player: TPlayer; cell: TCell; var brd: TTemporaryBoard);
+var
+  op: TPlayer;
+  chain: TCellChain;
+  c: TCell;
+  x, y: shortint;
+  ca: TCellArray;
+
+  procedure FillNeighbors(ca: TCellArray; val: shortint);
+  var
+    n: TCellNeighbor;
+    cc: TCell;
+    cls: TCellArray;
+  begin
+    SetLength(cls, 0);
+    for cc in ca do
+      for n in cc.Neighbors do
+        if (brd[n.cell.X, n.cell.Y] < 1) and (n.cell.Player <> op) then
+          begin
+            brd[n.cell.X, n.cell.Y] := val;
+            SetLength(cls, Length(cls) + 1);
+            cls[High(cls)] := n.cell;
+          end;
+    for cc in cls do
+      FillNeighbors(cls, val + 1);
+    SetLength(cls, 0);
+  end;
+
+begin
+  SetLength(brd, Self.Fboard.BoardSide, Self.Fboard.BoardSide);
+
+  op := Self.GetOppositePlayer(player);
+  for chain in Self.Fchains[op] do
+    for c in chain.cells do
+      brd[c.X, c.Y] := -1;
+
+  SetLength(ca, 1);
+  ca[0] := cell;
+  brd[cell.X, cell.Y] := 1;
+  FillNeighbors(ca, 2);
+
+  {$IFDEF _DBG_WAY_MAP_FOR_ONE_CELL}
+  for y := 0 to Self.Fboard.MaxIndex do
+    begin
+      for x := 0 to Self.Fboard.MaxIndex do
+        begin
+        if (brd[x, y] >= 0) and (brd[x, y] <= 9) then
+          Write('0');
+        Write(brd[x, y], ' ');
+        end;
+      WriteLn();
+    end;
+  {$ENDIF}
+end;
+
 function  TAIDefault.FindMove(const board: TGameBoard; player: TPlayer): TPoint;
 var
   brd:       TPriorityBoard;
+  map:       TTemporaryBoard;
   move:      TMove;
   dir:       TTwoBridgeConnectionDirection;
   tbinfo:    TTwoBridgeConnectionInformation;
@@ -622,7 +682,11 @@ begin
         end;
       {$ENDIF}
 
-      brd := TPriorityBoard.Create();
+      SetLength(map, 0);
+      Self.GenerateWayMapForCell(PlayerOne, board.GetCell(2, 2), map);
+      SetLength(map, 0);
+
+      {brd := TPriorityBoard.Create();
       brd.ai := self;
       brd.player := player;
       brd.InitArray(board.BoardSide);
@@ -664,7 +728,7 @@ begin
             result.SetXY(x, y);
           end;
         WriteLn();
-        end;
+        end;}
     end;
 end;
 
