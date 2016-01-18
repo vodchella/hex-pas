@@ -17,6 +17,7 @@ type
     procedure RandomVsRandom();
     procedure AnalyzeCellChains1();
     procedure AnalyzeCellChains2();
+    procedure AnalyzeCellChains3();
   end;
 
 implementation
@@ -41,6 +42,13 @@ var
                                (2, 5), (2, 4), (3, 3),
                                (2, 5), (3, 4),
                                (2, 5), (3, 5)
+                             );
+  ArrForAnalyzeCellChains3: array [0..15] of array [0..1] of shortint = (
+                               (* PlayerOne *)
+                               (1, 5), (1, 4), (1, 3), (1, 2), (2, 1), (3, 1), (3, 2), (2, 3),
+                               (* PlayerTwo *)
+                               (0, 5), (0, 4), (0, 3),
+                               (2, 5), (2, 4), (3, 3), (3, 4), (3, 5)
                              );
 
 procedure TTestHexGame.SearchForWinner1();
@@ -196,7 +204,25 @@ begin
       board.MakeMove(0, 3, PlayerTwo);
       board.MakeMove(4, 3, PlayerOne);
 
-      ai.FindMove(board, PlayerTwo);  // <<-- Force chains updating
+      ai.GameBoard := board;
+      ai.FindAllChains(false);
+
+      {$IFDEF _DBG_CELL_CHAINS_SEARCH}
+      WriteLn('----- Chains1:');
+      for pl in [PlayerOne..PlayerTwo] do
+        begin
+          pchains := ai.AllCellChains[pl];
+          WriteLn('      ', pl, ': ', Length(pchains));
+          for chain in pchains do
+            begin
+              Write('      > ');
+              for cell in chain.cells do
+                Write('(', cell.X,', ', cell.Y,') ');
+              WriteLn();
+            end;
+          WriteLn('-------------');
+        end;
+      {$ENDIF}
 
       i := 0;
       for pl in [PlayerOne..PlayerTwo] do
@@ -249,7 +275,25 @@ begin
       board.MakeMove(1, 3, PlayerOne);
       board.MakeMove(3, 4, PlayerTwo);
 
-      ai.FindMove(board, PlayerOne);  // <<-- Force chains updating
+      ai.GameBoard := board;
+      ai.FindAllChains(false);
+
+      {$IFDEF _DBG_CELL_CHAINS_SEARCH}
+      WriteLn('----- Chains2:');
+      for pl in [PlayerOne..PlayerTwo] do
+        begin
+          pchains := ai.AllCellChains[pl];
+          WriteLn('      ', pl, ': ', Length(pchains));
+          for chain in pchains do
+            begin
+              Write('      > ');
+              for cell in chain.cells do
+                Write('(', cell.X,', ', cell.Y,') ');
+              WriteLn();
+            end;
+          WriteLn('-------------');
+        end;
+      {$ENDIF}
 
       i := 0;
       for pl in [PlayerOne..PlayerTwo] do
@@ -264,6 +308,77 @@ begin
               end;
         end;
       if i <> 20 then
+        Fail('Wrong number of cells in chain ');
+    end
+  else
+    Fail('Can''t create board');
+end;
+
+procedure TTestHexGame.AnalyzeCellChains3();
+var
+  board:   TGameBoard;
+  ai:      TAIDefault;
+  pl:      TPlayer;
+  pchains: TPlayerChains;
+  chain:   TCellChain;
+  cell:    TCell;
+  i:       shortint;
+begin
+  board := TGameBoard.Create();
+  if board.Initialize(6) then
+    begin
+      ai := TAIDefault.Create();
+
+      board.MakeMove(1, 5, PlayerOne);
+      board.MakeMove(0, 5, PlayerTwo);
+      board.MakeMove(1, 4, PlayerOne);
+      board.MakeMove(0, 4, PlayerTwo);
+      board.MakeMove(2, 3, PlayerOne);
+      board.MakeMove(0, 3, PlayerTwo);
+      board.MakeMove(3, 2, PlayerOne);
+      board.MakeMove(2, 5, PlayerTwo);
+      board.MakeMove(3, 1, PlayerOne);
+      board.MakeMove(2, 4, PlayerTwo);
+      board.MakeMove(2, 1, PlayerOne);
+      board.MakeMove(3, 3, PlayerTwo);
+      board.MakeMove(1, 2, PlayerOne);
+      board.MakeMove(3, 5, PlayerTwo);
+      board.MakeMove(1, 3, PlayerOne);
+      board.MakeMove(3, 4, PlayerTwo);
+
+      ai.GameBoard := board;
+      ai.FindAllChains(true);
+
+      {$IFDEF _DBG_CELL_CHAINS_SEARCH}
+      WriteLn('----- Chains3:');
+      for pl in [PlayerOne..PlayerTwo] do
+        begin
+          pchains := ai.AllCellChains[pl];
+          WriteLn('      ', pl, ': ', Length(pchains));
+          for chain in pchains do
+            begin
+              Write('      > ');
+              for cell in chain.cells do
+                Write('(', cell.X,', ', cell.Y,') ');
+              WriteLn();
+            end;
+          WriteLn('-------------');
+        end;
+      {$ENDIF}
+
+      i := 0;
+      for pl in [PlayerOne..PlayerTwo] do
+        begin
+          pchains := ai.AllCellChains[pl];
+          for chain in pchains do
+            for cell in chain.cells do
+              begin
+                if (cell.X <> ArrForAnalyzeCellChains3[i][0]) or (cell.Y <> ArrForAnalyzeCellChains3[i][1]) then
+                  Fail('Something wrong with cell chains building');
+                inc(i);
+              end;
+        end;
+      if i <> 16 then
         Fail('Wrong number of cells in chain ');
     end
   else

@@ -66,13 +66,16 @@ type
       function  CellBelongToAnyChain(pc: PPlayerChains; cell: TCell): boolean;
       function  AppendChain(pc: PPlayerChains; chain: TCellChain): shortint;
       procedure AppendCell(chain: TCellChain; cell: TCell);
-      procedure FillChainRecursive(pc: PPlayerChains; chain: TCellChain; cell: TCell);
-      procedure FindAllChains();
+      procedure FillChainRecursive(pc: PPlayerChains; chain: TCellChain; cell: TCell; DontForkChainsOnDivarication: boolean = true);
       procedure GenerateWayMapForCell(player: TPlayer; cell: TCell; var brd: TTemporaryBoard);
     public
       function  FindMove(const board: TGameBoard; player: TPlayer): TPoint;
+      procedure FindAllChains(DontForkChainsOnDivarication: boolean = true);
       property  AllCellChains: TAllCellChains read Fchains;
       class constructor Create();
+      {$IFDEF _DBG}
+      property  GameBoard: TGameBoard read Fboard write Fboard;
+      {$ENDIF}
   end;
 
 
@@ -467,7 +470,7 @@ begin
   result.SetXY(p.X, p.Y);
 end;
 
-procedure TAIDefault.FillChainRecursive(pc: PPlayerChains; chain: TCellChain; cell: TCell);
+procedure TAIDefault.FillChainRecursive(pc: PPlayerChains; chain: TCellChain; cell: TCell; DontForkChainsOnDivarication: boolean = true);
 var
   neighbor: TCellNeighbor;
   NewChain, ReferenceChain: TCellChain;
@@ -479,7 +482,7 @@ begin
   if not chain.CellInChain(cell) then
     Self.AppendCell(chain, cell);
 
-  if (cell.AllyNeighborsCount > 2) or ((cell.AllyNeighborsCount = 2) and (Length(chain.cells) = 1)) then
+  if (not DontForkChainsOnDivarication) and ((cell.AllyNeighborsCount > 2) or ((cell.AllyNeighborsCount = 2) and (Length(chain.cells) = 1))) then
     begin
       SetLength(cells, 0);
       SetLength(ChainIndices, 0);
@@ -513,16 +516,16 @@ begin
               NewChain := chain
             else
               NewChain := pc^[ChainIndices[l]];
-            Self.FillChainRecursive(pc, NewChain, cells[l]);
+            Self.FillChainRecursive(pc, NewChain, cells[l], DontForkChainsOnDivarication);
           end;
     end
   else
     for neighbor in cell.Neighbors do
       if (neighbor.cell.Player = cell.Player) and (not Self.CellBelongToAnyChain(pc, neighbor.cell)) then
-        Self.FillChainRecursive(pc, chain, neighbor.cell);
+        Self.FillChainRecursive(pc, chain, neighbor.cell, DontForkChainsOnDivarication);
 end;
 
-procedure TAIDefault.FindAllChains();
+procedure TAIDefault.FindAllChains(DontForkChainsOnDivarication: boolean = true);
 var
   pchains: PPlayerChains;
   chain:   TCellChain;
@@ -541,7 +544,7 @@ begin
             begin
               chain := TCellChain.Create();
               Self.AppendChain(pchains, chain);
-              Self.FillChainRecursive(pchains, chain, move.cell);
+              Self.FillChainRecursive(pchains, chain, move.cell, DontForkChainsOnDivarication);
             end;
         end;
     end;
@@ -664,7 +667,7 @@ begin
       result := TPoint.Create();
       Self.Fboard := board;
 
-      Self.FindAllChains();
+      Self.FindAllChains(true);
       {$IFDEF _DBG_CELL_CHAINS_SEARCH}
       WriteLn('----- Chains');
       for pl in [PlayerOne..PlayerTwo] do
